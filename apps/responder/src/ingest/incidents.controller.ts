@@ -44,8 +44,13 @@ export async function incidentsRoutes(app: FastifyInstance): Promise<void> {
       firstSeen: event.timestamp,
     });
 
-    // Reply first, then kick off investigation — never block the response.
-    queueMicrotask(() => startInvestigation(id));
+    setImmediate(() => {
+      try {
+        startInvestigation(id);
+      } catch (err) {
+        app.log.error(err, `investigation failed to start for incident ${id}`);
+      }
+    });
     return reply.code(202).send({ incidentId: id });
   });
 }
