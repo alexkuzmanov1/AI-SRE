@@ -28,16 +28,19 @@ async function git(args: string[], cwd?: string): Promise<ToolResult> {
 const commitsInput = z.object({ limit: z.number().int().min(1).max(50).default(10) });
 
 export async function getRecentCommits(limit = 10, cwd?: string): Promise<ToolResult> {
-  // %H sha, %an author, %aI ISO date, %s subject — newest first (git default).
-  const fmt = '%H%x1f%an%x1f%aI%x1f%s';
+  // %x1e record separator prefixes every commit — a merge commit emits no
+  // file list and no blank line after its header, so splitting on "\n\n"
+  // (the old approach) glued the next commit's header onto the merge
+  // commit's file list and silently dropped it. \x1e can't appear in any of
+  // these fields, so splitting on it is unambiguous regardless of shape.
+  const fmt = '%x1e%H%x1f%an%x1f%aI%x1f%s';
   const res = await git(['log', `-n${limit}`, `--pretty=format:${fmt}`, '--name-only'], cwd);
   if (!res.ok) return res;
-  // Parse blocks: header line (unit-separated) then changed-file lines.
   const commits = String(res.data)
-    .split('\n\n')
-    .filter(Boolean)
+    .split('\x1e')
+    .filter((block) => block.trim().length > 0)
     .map((block) => {
-      const [header, ...files] = block.split('\n');
+      const [header, ...files] = block.trim().split('\n');
       const [sha, author, date, subject] = header.split('\x1f');
       return { sha, author, date, subject, files: files.filter(Boolean) };
     });
@@ -45,9 +48,14 @@ export async function getRecentCommits(limit = 10, cwd?: string): Promise<ToolRe
 }
 
 // ---- get_diff ----
-const diffInput = z.object({ sha: z.string().min(1) });
+// Restrict to a real sha shape so a value like "--output=/some/path" is
+// rejected before it ever reaches execFile as a git option (option
+// injection — execFile's array form blocks shell injection, not this).
+const shaPattern = /^[0-9a-f]{7,40}$/i;
+const diffInput = z.object({ sha: z.string().regex(shaPattern, 'must be a git commit sha') });
 
 export async function getDiff(sha: string, cwd?: string): Promise<ToolResult> {
+  if (!shaPattern.test(sha)) return err(`Invalid sha: ${sha}`);
   return git(['show', sha, '--patch', '--no-color'], cwd);
 }
 

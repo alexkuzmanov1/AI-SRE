@@ -12,9 +12,16 @@ function deferred(name: string): () => string {
   return () => required(name);
 }
 
+function deferredNumber(name: string): () => number {
+  return () => Number(required(name));
+}
+
 export const env = {
-  PORT: Number(required('PORT')),
-  DATABASE_URL: required('DATABASE_URL'),
+  // Lazy on purpose: importing this module (e.g. an agent tool that only
+  // needs TARGET_REPO_PATH) must not require PORT/DATABASE_URL to be set.
+  // Each var is validated the first time its own getter is called.
+  PORT: deferredNumber('PORT'),
+  DATABASE_URL: deferred('DATABASE_URL'),
 
   ANTHROPIC_API_KEY: deferred('ANTHROPIC_API_KEY'),
   ANTHROPIC_MODEL: deferred('ANTHROPIC_MODEL'),

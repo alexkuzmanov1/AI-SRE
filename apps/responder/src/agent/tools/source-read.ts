@@ -50,8 +50,12 @@ export async function searchCode(
   repoRoot: string = env.TARGET_REPO_PATH(),
 ): Promise<ToolResult> {
   try {
-    // git grep: fast, repo-scoped, line numbers. -F = fixed string (no regex injection).
-    const { stdout } = await execFileAsync('git', ['grep', '-n', '-F', query], {
+    // git grep: fast, repo-scoped, line numbers. -F = fixed string (no regex
+    // injection). -e <query> forces query to be treated as a pattern, not a
+    // git-grep option — without it a query starting with "-" (e.g.
+    // "--open-files-in-pager=...") is parsed as an option, and the error
+    // text agents investigate can be attacker-influenced.
+    const { stdout } = await execFileAsync('git', ['grep', '-n', '-F', '-e', query], {
       cwd: resolve(repoRoot),
       maxBuffer: 5 * 1024 * 1024,
     });

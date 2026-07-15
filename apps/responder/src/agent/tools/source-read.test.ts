@@ -38,7 +38,21 @@ test('searchCode: query with matches -> non-empty rows', async () => {
 });
 
 test('searchCode: query with no matches -> ok:true, data:[]', async () => {
-  const res = await searchCode('zzz-no-such-string-zzz', cwd);
+  // Built by concatenation so the literal string doesn't appear anywhere in
+  // this tracked file — git grep would otherwise match this very line.
+  const noSuchQuery = ['zzz', 'no-such-string', 'zzz'].join('-');
+  const res = await searchCode(noSuchQuery, cwd);
+  assert.equal(res.ok, true);
+  assert.deepEqual((res as { ok: true; data: unknown }).data, []);
+});
+
+test('searchCode: query starting with "-" is treated as a pattern, not a git-grep option', async () => {
+  // Without `-e`, git parses a leading "-" as an option (e.g.
+  // --open-files-in-pager, which runs a command). Built by concatenation
+  // for the same self-match reason as above — plus it proves the literal
+  // "-"-prefixed string isn't sitting anywhere else in the repo to match.
+  const optionLikeQuery = '--open-files-in-pager=' + 'touch';
+  const res = await searchCode(optionLikeQuery, cwd);
   assert.equal(res.ok, true);
   assert.deepEqual((res as { ok: true; data: unknown }).data, []);
 });
