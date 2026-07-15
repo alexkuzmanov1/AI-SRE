@@ -1,0 +1,10 @@
+[
+  { "timestamp": "2026-07-15T08:59:10.000Z", "service": "demo-app", "level": "INFO",  "message": "GET /users/42 200 12ms" },
+  { "timestamp": "2026-07-15T08:59:40.000Z", "service": "demo-app", "level": "INFO",  "message": "GET /health 200 1ms" },
+  { "timestamp": "2026-07-15T09:00:00.000Z", "service": "demo-app", "level": "INFO",  "message": "Deployed commit b376c07" },
+  { "timestamp": "2026-07-15T09:00:05.000Z", "service": "demo-app", "level": "ERROR", "message": "TypeError: Cannot read properties of undefined (reading 'id') at getUser (users.service.ts:42)" },
+  { "timestamp": "2026-07-15T09:00:07.000Z", "service": "demo-app", "level": "ERROR", "message": "TypeError: Cannot read properties of undefined (reading 'id') at getUser (users.service.ts:42)" },
+  { "timestamp": "2026-07-15T09:00:11.000Z", "service": "demo-app", "level": "ERROR", "message": "TypeError: Cannot read properties of undefined (reading 'id') at getUser (users.service.ts:42)" },
+  { "timestamp": "2026-07-15T09:00:20.000Z", "service": "demo-app", "level": "INFO",  "message": "GET /health 200 1ms" },
+  { "timestamp": "2026-07-15T09:01:00.000Z", "service": "other-svc", "level": "ERROR", "message": "unrelated: upstream 503" }
+]
