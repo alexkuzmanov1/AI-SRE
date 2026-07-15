@@ -1,4 +1,4 @@
-import type { Incident, AgentStep, RCA } from '@sre/shared';
+import type { Incident, AgentStep, ErrorEvent, RCA } from '@sre/shared';
 import { db } from './db.js';
 
 type IncidentRow = {
@@ -9,6 +9,7 @@ type IncidentRow = {
   first_seen: string;
   count: number;
   rca_json: string | null;
+  error_event_json: string | null;
 };
 
 function rowToIncident(row: IncidentRow): Incident {
@@ -28,12 +29,20 @@ export function createIncident(input: {
   fingerprint: string;
   title: string;
   firstSeen: string;
+  event: ErrorEvent;
 }): Incident {
   db.prepare(
-    `INSERT INTO incidents (id, fingerprint, status, title, first_seen, count)
-     VALUES (?, ?, 'investigating', ?, ?, 1)`,
-  ).run(input.id, input.fingerprint, input.title, input.firstSeen);
+    `INSERT INTO incidents (id, fingerprint, status, title, first_seen, count, error_event_json)
+     VALUES (?, ?, 'investigating', ?, ?, 1, ?)`,
+  ).run(input.id, input.fingerprint, input.title, input.firstSeen, JSON.stringify(input.event));
   return getIncident(input.id)!;
+}
+
+export function getErrorEvent(id: string): ErrorEvent | undefined {
+  const row = db
+    .prepare(`SELECT error_event_json FROM incidents WHERE id = ?`)
+    .get(id) as { error_event_json: string | null } | undefined;
+  return row?.error_event_json ? (JSON.parse(row.error_event_json) as ErrorEvent) : undefined;
 }
 
 export function findByFingerprint(fingerprint: string): Incident | undefined {
@@ -99,4 +108,36 @@ export function listIncidents(): Incident[] {
     .prepare(`SELECT * FROM incidents ORDER BY rowid DESC`)
     .all() as IncidentRow[];
   return rows.map(rowToIncident);
+}
+
+type AgentStepRow = {
+  incident_id: string;
+  idx: number;
+  type: AgentStep['type'];
+  tool: string | null;
+  input_json: string | null;
+  output: string | null;
+  text: string | null;
+};
+
+function rowToStep(row: AgentStepRow): AgentStep {
+  return {
+    incidentId: row.incident_id,
+    index: row.idx,
+    type: row.type,
+    tool: row.tool ?? undefined,
+    input: row.input_json ? JSON.parse(row.input_json) : undefined,
+    output: row.output ?? undefined,
+    text: row.text ?? undefined,
+  };
+}
+
+export function listSteps(incidentId: string): AgentStep[] {
+  const rows = db
+    .prepare(
+      `SELECT incident_id, idx, type, tool, input_json, output, text
+         FROM agent_steps WHERE incident_id = ? ORDER BY idx ASC`,
+    )
+    .all(incidentId) as AgentStepRow[];
+  return rows.map(rowToStep);
 }

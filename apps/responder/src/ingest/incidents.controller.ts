@@ -42,6 +42,7 @@ export async function incidentsRoutes(app: FastifyInstance): Promise<void> {
       fingerprint: fp,
       title: event.message.slice(0, 120),
       firstSeen: event.timestamp,
+      event,
     });
 
     setImmediate(() => {

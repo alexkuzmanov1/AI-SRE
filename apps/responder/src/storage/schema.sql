@@ -1,11 +1,12 @@
 CREATE TABLE IF NOT EXISTS incidents (
-  id          TEXT PRIMARY KEY,
-  fingerprint TEXT UNIQUE NOT NULL,
-  status      TEXT NOT NULL,
-  title       TEXT NOT NULL,
-  first_seen  TEXT NOT NULL,
-  count       INTEGER NOT NULL DEFAULT 1,
-  rca_json    TEXT
+  id               TEXT PRIMARY KEY,
+  fingerprint      TEXT UNIQUE NOT NULL,
+  status           TEXT NOT NULL,
+  title            TEXT NOT NULL,
+  first_seen       TEXT NOT NULL,
+  count            INTEGER NOT NULL DEFAULT 1,
+  rca_json         TEXT,
+  error_event_json TEXT
 );
 
 CREATE TABLE IF NOT EXISTS agent_steps (

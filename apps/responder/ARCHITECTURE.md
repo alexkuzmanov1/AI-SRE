@@ -51,19 +51,94 @@ dedupe onto one incident instead of spawning new ones on every hit.
 - No wall-clock, no randomness anywhere in the pipeline — a restart or a
   redeploy must not change a fingerprint for the same input.
 
-## Agent loop stub (`src/agent/loop.ts`)
+## Agent loop (`src/agent/loop.ts`)
 
-`startInvestigation(incidentId)` is currently a stub — logs and returns. It
-exists now so the ingest controller has a stable call site. Phase 4 replaces
-the body with the real Anthropic tool-use loop; **the exported signature must
-not change**, so the swap is a drop-in with no controller edits.
+`startInvestigation(incidentId)` stays a **sync `void`** export — the ingest
+controller calls it inside a synchronous `try/catch`, which cannot catch a
+rejected promise. The real work happens in an internal async
+`runInvestigation(incidentId, opts)`; `startInvestigation` fires it and
+attaches its own `.catch` so a crash mid-investigation marks the incident
+`failed` instead of taking the process down. `opts` (client, maxSteps,
+timeoutMs, tokenBudget) exists purely so tests can inject a fake Anthropic
+client and shrink the caps — production always uses the defaults.
+
+The loop is a standard Anthropic Messages API tool-use round trip: seed a
+user message from `buildIncidentBriefing` (title, firstSeen, count, plus the
+persisted `ErrorEvent`'s stack/route — see below), pass `tools: toolSchemas`,
+and for each `tool_use` block call `runTool(name, input)` (never throws) and
+feed the `ToolResult` back as a `tool_result` block (`is_error: !result.ok`).
+`submit_rca` is terminal **by name**: when `runTool` returns `ok` for
+`TERMINAL_TOOL`, that payload *is* the `RCA` — `setRca` + `setStatus(id,
+'resolved')`, publish `rca` then `done`, stop. Two independent caps bound
+runaway investigations: `MAX_STEPS` (12) and a 90s wall-clock `TIMEOUT_MS`
+checked once per turn; either one exhausting calls `giveUp()` →
+`setStatus(id, 'failed')` + a `failed` bus event + `done`.
+
+### The `record()` invariant — persist and publish, always together
+
+Every `AgentStep` (`thinking`, `tool_call`, `tool_result`) is created through
+exactly one function:
+
+```ts
+function record(step: Omit<AgentStep, 'index'>): AgentStep {
+  const index = appendStep(step as AgentStep); // DB assigns the monotonic idx
+  const full: AgentStep = { ...step, index };
+  publish(step.incidentId, { kind: 'step', step: full });
+  return full;
+}
+```
+
+There is no other way to emit a step. This is what guarantees "every agent
+step must be persisted **and** emitted over SSE; never a silent step" — a
+step that only hit one side would either leave a gap in the live feed or
+vanish from history on replay.
+
+### Richer briefing — the persisted `ErrorEvent`
+
+`incidents` gained an `error_event_json` column (nullable, migrated in-place
+in `db.ts` for pre-existing local `data.db` files via a `try { ALTER TABLE
+... } catch {}`, since `CREATE TABLE IF NOT EXISTS` only helps a fresh DB).
+`createIncident` now takes the validated `ErrorEvent` and stores it;
+`getErrorEvent(id)` reads it back. The loop passes it into
+`buildIncidentBriefing` so the model sees the real stack trace and route, not
+just the 120-char title.
+
+## Event bus (`src/events/incident-bus.ts`)
+
+Pure in-process pub/sub, one channel (a `Set<Listener>`) per incident id,
+kept in a `Map`. `publish` is a no-op if nobody is subscribed — it does
+**not** buffer history, deliberately: history lives in SQLite via
+`appendStep`/`listSteps`, and a bus that also remembered old messages would
+double-deliver them to a late-joining SSE client. `subscribe` returns an
+unsubscribe function that deletes the listener and, once a channel's set is
+empty, deletes the channel entry too — no listener leaks across
+investigations.
+
+## SSE streaming (`src/ingest/stream.controller.ts`)
+
+`GET /api/incidents/:id/stream` hijacks the Fastify reply
+(`reply.hijack()`) and writes SSE frames directly to `reply.raw` — required
+because we're holding the connection open past the handler's return, which
+Fastify's normal response lifecycle doesn't expect.
+
+The late-join race — a step published in the gap between "read stored steps"
+and "subscribe to the bus" — is closed by **subscribing before reading
+anything**: the bus listener buffers incoming messages until replay
+finishes, then the buffer is flushed and dispatch goes live. A
+`lastSentIdx` cursor de-dupes across the replay/buffer boundary, since a step
+already sent during replay might also arrive again in the buffer if it was
+published in that exact window.
+
+Connecting after the incident is already `resolved`/`failed` skips the live
+phase entirely: replay stored steps, replay the terminal event (`rca` if
+present), send `done`, close. `request.raw.on('close', cleanup)` unsubscribes
+on client disconnect so an abandoned connection doesn't leak a bus listener.
 
 ## Agent tools (`src/agent/tools/`)
 
 Seven tools, each a file exporting `{ schema, execute }` (`Tool` in
-`types.ts`), assembled by the registry (`index.ts`) that Phase 4's loop will
-drive. Built and unit-tested standalone in Phase 3 — the loop does not call
-into this package yet.
+`types.ts`), assembled by the registry (`index.ts`) and driven by the agent
+loop (`src/agent/loop.ts`).
 
 - **Contract:** `schema` is a native `Anthropic.Tool` (name, description,
   `input_schema`); `execute(input)` always resolves to a `ToolResult` —
@@ -102,7 +177,7 @@ into this package yet.
 
 ```mermaid
 flowchart TD
-    Loop["Agent loop (Phase 4 — stub today)"] -->|"runTool(name, input)"| Reg["tools/index.ts registry"]
+    Loop["Agent loop (src/agent/loop.ts)"] -->|"runTool(name, input)"| Reg["tools/index.ts registry"]
     Reg -->|unknown name| ErrU["ToolResult ok:false 'Unknown tool'"]
     Reg --> SR["submit_rca<br/>(TERMINAL)"]
     Reg --> GL["get_logs"]
@@ -112,7 +187,7 @@ flowchart TD
     Reg --> SC["search_code"]
     Reg --> DH["get_deploy_history"]
 
-    SR -->|zod-valid RCA| RCAout["RCA → Phase-4 setRca()"]
+    SR -->|zod-valid RCA| RCAout["RCA → setRca() + setStatus('resolved')"]
     GL --> LogsF[("fixtures/logs.json")]
     DH --> DepF[("fixtures/deploys.json")]
     RC --> Git["git (execFile) @ TARGET_REPO_PATH"]

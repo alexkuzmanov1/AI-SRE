@@ -19,7 +19,7 @@ them. `PORT` and `DATABASE_URL` are required at boot; a missing one fails loudly
 ## Wire contracts (frozen)
 
 - `POST /api/incidents` accepts an `ErrorEvent` (demo-app → responder).
-- `GET /api/incidents/:id/stream` (SSE): `event: step` (data = `AgentStep` JSON) repeated for each step, then `event: rca` (data = `RCA` JSON), then `event: done`.
+- `GET /api/incidents/:id/stream` (SSE): `event: step` (data = `AgentStep` JSON) repeated for each step, then `event: rca` (data = `RCA` JSON), then `event: done`. If the agent gives up (step cap or 90s timeout) without an RCA, an `event: failed` (data = `{reason}`) is sent instead of `rca`, still followed by `done`.
 
 `@sre/shared` types are frozen — changing a field needs a heads-up to the other person.
 
@@ -27,7 +27,18 @@ them. `PORT` and `DATABASE_URL` are required at boot; a missing one fails loudly
 
 `apps/responder/src/agent/tools/` has the seven agent tools (`submit_rca`,
 `get_logs`, `get_recent_commits`, `get_diff`, `read_file`, `search_code`,
-`get_deploy_history`) plus the registry — built and unit-tested standalone,
-not yet wired into the agent loop. Pulls in `@anthropic-ai/sdk` and `zod`; see
-[apps/responder/ARCHITECTURE.md](apps/responder/ARCHITECTURE.md) for the
-contract and a diagram.
+`get_deploy_history`) plus the registry, wired into the agent loop
+(`apps/responder/src/agent/loop.ts`, Phase 4). Pulls in `@anthropic-ai/sdk`
+and `zod`; see [apps/responder/ARCHITECTURE.md](apps/responder/ARCHITECTURE.md)
+for the contract and a diagram.
+
+## Agent loop + live streaming (Phase 4)
+
+`POST /api/incidents` kicks off `startInvestigation`, which runs an Anthropic
+tool-use loop (system prompt in `src/agent/prompts/investigator.ts`) capped
+at 12 steps / 90s. Every step is persisted to SQLite and published to an
+in-process per-incident event bus (`src/events/incident-bus.ts`) in the same
+call, so the SSE endpoint (`src/ingest/stream.controller.ts`) can replay
+history for a late-joining viewer and then continue live with no gap or
+duplicate. See [apps/responder/ARCHITECTURE.md](apps/responder/ARCHITECTURE.md)
+for the full design.
