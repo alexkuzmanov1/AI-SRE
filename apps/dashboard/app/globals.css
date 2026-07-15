@@ -1,0 +1,101 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * Design tokens from the Responder mockup — GitHub-dark aesthetic.
+ * Dark by default; there is no light mode.
+ *
+ * Each color is stored as space-separated RGB channels (`--*-rgb`) so Tailwind
+ * can apply alpha via `/opacity` modifiers, plus a ready-to-use `rgb()` alias
+ * (`--color-*`) for direct references in inline styles.
+ */
+:root {
+  --color-bg-rgb: 13 17 23;
+  --color-panel-rgb: 22 27 34;
+  --color-border-rgb: 48 54 61;
+  --color-border-subtle-rgb: 33 38 45;
+
+  --color-text-rgb: 230 237 243;
+  --color-text-secondary-rgb: 201 209 217;
+  --color-muted-rgb: 125 133 144;
+  --color-muted-soft-rgb: 157 167 179;
+  --color-muted-faint-rgb: 85 96 108;
+
+  --color-accent-rgb: 88 166 255;
+  --color-accent-hover-rgb: 121 184 255;
+
+  --color-success-rgb: 63 185 80;
+  --color-success-hover-rgb: 46 160 67;
+  --color-danger-rgb: 248 81 73;
+  --color-warning-rgb: 227 179 65;
+  --color-purple-rgb: 163 113 247;
+
+  --color-bg: rgb(var(--color-bg-rgb));
+  --color-panel: rgb(var(--color-panel-rgb));
+  --color-border: rgb(var(--color-border-rgb));
+  --color-border-subtle: rgb(var(--color-border-subtle-rgb));
+  --color-text: rgb(var(--color-text-rgb));
+  --color-text-secondary: rgb(var(--color-text-secondary-rgb));
+  --color-muted: rgb(var(--color-muted-rgb));
+  --color-muted-soft: rgb(var(--color-muted-soft-rgb));
+  --color-muted-faint: rgb(var(--color-muted-faint-rgb));
+  --color-accent: rgb(var(--color-accent-rgb));
+  --color-accent-hover: rgb(var(--color-accent-hover-rgb));
+  --color-success: rgb(var(--color-success-rgb));
+  --color-success-hover: rgb(var(--color-success-hover-rgb));
+  --color-danger: rgb(var(--color-danger-rgb));
+  --color-warning: rgb(var(--color-warning-rgb));
+  --color-purple: rgb(var(--color-purple-rgb));
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-plex-sans), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Consistent thin scrollbars matching the dark surfaces. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border) transparent;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 8px;
+  border: 2px solid var(--color-bg);
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Shimmer surface for skeletons / "investigating" states. */
+.shimmer {
+  background-image: linear-gradient(
+    90deg,
+    var(--color-border-subtle) 0%,
+    var(--color-border) 40%,
+    var(--color-border-subtle) 80%
+  );
+  background-size: 200% 100%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
