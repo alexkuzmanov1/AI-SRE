@@ -22,3 +22,12 @@ them. `PORT` and `DATABASE_URL` are required at boot; a missing one fails loudly
 - `GET /api/incidents/:id/stream` (SSE): `event: step` (data = `AgentStep` JSON) repeated for each step, then `event: rca` (data = `RCA` JSON), then `event: done`.
 
 `@sre/shared` types are frozen — changing a field needs a heads-up to the other person.
+
+## Agent toolbox (Phase 3)
+
+`apps/responder/src/agent/tools/` has the seven agent tools (`submit_rca`,
+`get_logs`, `get_recent_commits`, `get_diff`, `read_file`, `search_code`,
+`get_deploy_history`) plus the registry — built and unit-tested standalone,
+not yet wired into the agent loop. Pulls in `@anthropic-ai/sdk` and `zod`; see
+[apps/responder/ARCHITECTURE.md](apps/responder/ARCHITECTURE.md) for the
+contract and a diagram.
