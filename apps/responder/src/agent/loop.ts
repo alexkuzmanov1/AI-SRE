@@ -15,12 +15,17 @@ import { INVESTIGATOR_SYSTEM_PROMPT, buildIncidentBriefing } from './prompts/inv
 const MAX_STEPS = 12;
 const TIMEOUT_MS = 90_000;
 const MAX_TOKENS_BUDGET = 200_000; // cumulative input+output ceiling; hard stop
-const MAX_TOKENS_PER_TURN = 4096;
+// submit_rca carries a unified diff + full postmortem — 4096 was tight enough
+// to truncate a real terminal call. 8192 gives that headroom.
+const MAX_TOKENS_PER_TURN = 8192;
 
 /** The narrow slice of the SDK client the loop actually calls — lets tests pass a plain mock. */
 export interface MessagesClient {
   messages: {
-    create(params: Anthropic.MessageCreateParamsNonStreaming): Promise<Anthropic.Message>;
+    create(
+      params: Anthropic.MessageCreateParamsNonStreaming,
+      options?: { timeout?: number },
+    ): Promise<Anthropic.Message>;
   };
 }
 
@@ -81,16 +86,31 @@ export async function runInvestigation(incidentId: string, opts: RunOptions = {}
   const deadline = Date.now() + timeoutMs;
 
   for (let step = 0; step < maxSteps; step++) {
-    if (Date.now() > deadline) return giveUp(incidentId, 'timeout');
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) return giveUp(incidentId, 'timeout');
     if (tokensUsed > tokenBudget) return giveUp(incidentId, 'token budget exceeded');
 
-    const response = await client.messages.create({
-      model,
-      max_tokens: MAX_TOKENS_PER_TURN,
-      system: INVESTIGATOR_SYSTEM_PROMPT,
-      tools: toolSchemas,
-      messages,
-    });
+    // Bound the request to whatever's left of the 90s budget — otherwise a
+    // stalled call is only ever caught by the *next* loop iteration's check
+    // above, which never comes if the call itself hangs.
+    let response: Anthropic.Message;
+    try {
+      response = await client.messages.create(
+        {
+          model,
+          max_tokens: MAX_TOKENS_PER_TURN,
+          system: INVESTIGATOR_SYSTEM_PROMPT,
+          tools: toolSchemas,
+          messages,
+        },
+        { timeout: remaining },
+      );
+    } catch (err) {
+      return giveUp(
+        incidentId,
+        `API request failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
     tokensUsed += response.usage.input_tokens + response.usage.output_tokens;
 
     // Record any assistant thinking text as a distinct 'thinking' step.
@@ -108,7 +128,30 @@ export async function runInvestigation(incidentId: string, opts: RunOptions = {}
     );
 
     if (toolUses.length === 0) {
-      if (response.stop_reason === 'end_turn') {
+      if (response.stop_reason === 'max_tokens') {
+        // Cut off mid-turn with no completed tool call. Leaving the truncated
+        // content as the last entry would make the *next* call a silent
+        // prefill-continuation of it — fragile, and it burns a step
+        // invisibly. Replace it with a short, complete placeholder (keeping
+        // the assistant turn so roles still alternate correctly — popping it
+        // outright would leave two consecutive user turns, which the API
+        // itself rejects) and ask for a more concise retry.
+        messages[messages.length - 1] = {
+          role: 'assistant',
+          content: '[response truncated at max_tokens before any tool call]',
+        };
+        record({
+          incidentId,
+          type: 'thinking',
+          text: '[response truncated at max_tokens before any tool call — retrying more concisely]',
+        });
+        messages.push({
+          role: 'user',
+          content:
+            'Your last response was cut off at the token limit before you called a tool. ' +
+            'Be more concise: call a tool or submit_rca directly, without long restated reasoning.',
+        });
+      } else if (response.stop_reason === 'end_turn') {
         // Model talked but took no action — nudge it to act or finish.
         messages.push({
           role: 'user',

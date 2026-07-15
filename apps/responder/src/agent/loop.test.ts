@@ -213,3 +213,77 @@ test('timeout: a stalled turn still ends in failed status, promise resolves', as
 test('unknown incident id: returns without throwing', async () => {
   await assert.doesNotReject(() => runInvestigation(randomUUID(), { client: scriptedClient([]) }));
 });
+
+test('max_tokens truncation with no tool call is corrected, not silently continued', async () => {
+  const incidentId = makeIncident();
+  const calls: Anthropic.MessageCreateParamsNonStreaming[] = [];
+
+  const client: MessagesClient = {
+    messages: {
+      async create(params) {
+        // params.messages is the loop's live array — snapshot it, since the
+        // loop mutates it further (pushes the next turn) after this call.
+        calls.push({ ...params, messages: [...params.messages] });
+        if (calls.length === 1) {
+          return mockMessage([textBlock('Correlating deploy timing and')], 'max_tokens');
+        }
+        return mockMessage([toolUseBlock('submit_rca', VALID_RCA, 'tu1')], 'tool_use');
+      },
+    },
+  };
+
+  await runInvestigation(incidentId, { client });
+
+  const incident = getIncident(incidentId);
+  assert.equal(incident?.status, 'resolved');
+  assert.equal(calls.length, 2);
+
+  // The retry call must still alternate roles strictly (the API rejects two
+  // consecutive same-role turns) and must not end on the raw truncated
+  // content — the fragile prefill-continuation shape. The truncated
+  // assistant turn is replaced in place, then a corrective user nudge added.
+  const retryMessages = calls[1].messages;
+  assert.equal(retryMessages[retryMessages.length - 1]!.role, 'user');
+  assert.equal(retryMessages[retryMessages.length - 2]!.role, 'assistant');
+  assert.equal(retryMessages.length, 3);
+
+  // The truncation is still visible in the persisted step log.
+  const persisted = listSteps(incidentId);
+  assert.ok(persisted.some((s) => s.type === 'thinking' && /truncated at max_tokens/.test(s.text ?? '')));
+});
+
+test('passes a per-request timeout derived from the remaining deadline', async () => {
+  const incidentId = makeIncident();
+  const seenTimeouts: Array<number | undefined> = [];
+
+  const client: MessagesClient = {
+    messages: {
+      async create(_params, options) {
+        seenTimeouts.push(options?.timeout);
+        return mockMessage([toolUseBlock('submit_rca', VALID_RCA, 'tu1')], 'tool_use');
+      },
+    },
+  };
+
+  await runInvestigation(incidentId, { client, timeoutMs: 5000 });
+
+  assert.equal(seenTimeouts.length, 1);
+  assert.ok(seenTimeouts[0]! > 0 && seenTimeouts[0]! <= 5000);
+});
+
+test('a rejecting API call (e.g. SDK timeout abort) ends in failed status, not a crash', async () => {
+  const incidentId = makeIncident();
+
+  const client: MessagesClient = {
+    messages: {
+      async create() {
+        throw new Error('APIConnectionTimeoutError: Request timed out');
+      },
+    },
+  };
+
+  await assert.doesNotReject(() => runInvestigation(incidentId, { client }));
+
+  const incident = getIncident(incidentId);
+  assert.equal(incident?.status, 'failed');
+});
