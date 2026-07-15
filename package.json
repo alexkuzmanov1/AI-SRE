@@ -1,0 +1,10 @@
+{
+  "name": "ai-sre",
+  "private": true,
+  "scripts": {
+    "build": "pnpm -r build"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2"
+  }
+}

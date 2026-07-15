@@ -1,0 +1,11 @@
+{
+  "name": "responder",
+  "version": "0.0.1",
+  "private": true,
+  "dependencies": {
+    "@sre/shared": "workspace:*"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  }
+}

@@ -28,15 +28,14 @@ packages/
 5. Every step is persisted to `agent_steps` and pushed to the dashboard over **SSE** so the investigation streams live.
 6. The agent finishes by calling the `submit_rca` tool with structured output: `{ root_cause, confidence, suspect_commit, evidence[], proposed_patch, postmortem_md }`.
 7. Dashboard renders the RCA. A human clicks **Open PR** → `create_pull_request` applies the patch on a branch with the postmortem as the description.
-8. *(Stretch)* Resolved incidents are embedded into pgvector; new incidents run a similarity search first ("this matches INC-14").
+8. *(Stretch)* Resolved incidents are compared by an in-JS cosine similarity search over SQLite rows; new incidents run this first ("this matches INC-14").
 
 ## Tech stack
 
 - **demo-app:** NestJS (TypeScript)
 - **responder:** Node.js + TypeScript, Anthropic SDK (`claude-sonnet-4-6` by default), Octokit for GitHub
 - **dashboard:** Next.js (App Router), SSE for live streaming
-- **storage:** PostgreSQL (`incidents`, `agent_steps`), pgvector extension (stretch)
-- **infra:** Docker Compose for local dev
+- **storage:** SQLite (`better-sqlite3`) — `incidents`, `agent_steps` tables in a local `data.db` file; no DB server
 
 ## Agent tools
 
@@ -46,7 +45,7 @@ packages/
 | `get_recent_commits`, `get_diff` | Correlate error with recent changes |
 | `get_logs(service, window)` | Fetch logs around incident time (mocked JSON store) |
 | `get_deploy_history` | Deploy timeline for correlation |
-| `find_similar_incidents` | pgvector similarity over past incidents (stretch) |
+| `find_similar_incidents` | in-JS cosine similarity over SQLite rows (stretch) |
 | `create_pull_request` | Open fix PR — only after human approval |
 | `submit_rca` | Terminal tool; forces structured, parseable output |
 
@@ -62,7 +61,6 @@ packages/
 
 ```bash
 pnpm install
-docker compose up -d        # Postgres (+ pgvector)
 pnpm dev                    # runs all three apps concurrently
 pnpm demo:break             # merges a scripted bad commit into demo-app to trigger an incident
 ```
@@ -74,7 +72,9 @@ ANTHROPIC_API_KEY=...
 ANTHROPIC_MODEL=claude-sonnet-4-6
 GITHUB_TOKEN=...            # repo scope, PR creation
 TARGET_REPO=owner/demo-app
-DATABASE_URL=postgres://...
+TARGET_REPO_PATH=../demo-app
+DATABASE_URL=./data.db      # SQLite file path
+PORT=3001
 ```
 
 ## Conventions
