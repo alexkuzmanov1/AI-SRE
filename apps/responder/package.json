@@ -2,10 +2,21 @@
   "name": "responder",
   "version": "0.0.1",
   "private": true,
+  "type": "module",
   "dependencies": {
-    "@sre/shared": "workspace:*"
+    "@sre/shared": "workspace:*",
+    "fastify": "^5.2.0",
+    "better-sqlite3": "^11.8.0",
+    "dotenv": "^16.4.7"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.2",
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/node": "^22.10.5"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json"
+    "dev": "tsx watch src/main.ts",
+    "start": "node dist/main.js",
+    "build": "tsc -p tsconfig.json && cp src/storage/schema.sql dist/storage/"
   }
 }
