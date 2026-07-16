@@ -27,7 +27,7 @@ packages/
 4. The agent (Claude with tool use) investigates iteratively — typical trajectory: `get_logs` → `get_deploy_history` → `get_recent_commits` → `get_diff` → `read_file`. Max **12 steps**.
 5. Every step is persisted to `agent_steps` and pushed to the dashboard over **SSE** so the investigation streams live.
 6. The agent finishes by calling the `submit_rca` tool with structured output: `{ root_cause, confidence, suspect_commit, evidence[], proposed_patch, postmortem_md }`.
-7. Dashboard renders the RCA. A human clicks **Open PR** → `create_pull_request` applies the patch on a branch with the postmortem as the description.
+7. Dashboard renders the RCA. A human clicks **Open PR** → dashboard calls `POST /api/incidents/:id/pr` (human-triggered HTTP endpoint, not an agent tool) → responder applies `proposed_patch` on a branch and opens a GitHub PR with the postmortem as the description.
 8. *(Stretch)* Resolved incidents are compared by an in-JS cosine similarity search over SQLite rows; new incidents run this first ("this matches INC-14").
 
 ## Tech stack
@@ -46,8 +46,11 @@ packages/
 | `get_logs(service, window)` | Fetch logs around incident time (mocked JSON store) |
 | `get_deploy_history` | Deploy timeline for correlation |
 | `find_similar_incidents` | in-JS cosine similarity over SQLite rows (stretch) |
-| `create_pull_request` | Open fix PR — only after human approval |
 | `submit_rca` | Terminal tool; forces structured, parseable output |
+
+PR creation (`POST /api/incidents/:id/pr`) is **not** an agent tool — it's a
+human-triggered HTTP endpoint the dashboard's "Open PR" button calls, callable
+only once an `rca` exists on the incident.
 
 ## Key design decisions
 

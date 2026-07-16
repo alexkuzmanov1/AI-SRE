@@ -17,3 +17,9 @@ try {
 } catch {
   // column already present
 }
+try {
+  db.exec('ALTER TABLE incidents ADD COLUMN pr_url TEXT');
+  db.exec('ALTER TABLE incidents ADD COLUMN pr_number INTEGER');
+} catch {
+  // columns already present
+}

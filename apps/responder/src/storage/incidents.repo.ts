@@ -10,6 +10,8 @@ type IncidentRow = {
   count: number;
   rca_json: string | null;
   error_event_json: string | null;
+  pr_url: string | null;
+  pr_number: number | null;
 };
 
 function rowToIncident(row: IncidentRow): Incident {
@@ -21,6 +23,8 @@ function rowToIncident(row: IncidentRow): Incident {
     firstSeen: row.first_seen,
     count: row.count,
     rca: row.rca_json ? (JSON.parse(row.rca_json) as RCA) : undefined,
+    prUrl: row.pr_url ?? undefined,
+    prNumber: row.pr_number ?? undefined,
   };
 }
 
@@ -58,6 +62,14 @@ export function bumpCount(id: string): void {
 
 export function setStatus(id: string, status: Incident['status']): void {
   db.prepare(`UPDATE incidents SET status = ? WHERE id = ?`).run(status, id);
+}
+
+export function setPr(id: string, pr: { url: string; number: number }): void {
+  db.prepare(`UPDATE incidents SET pr_url = ?, pr_number = ? WHERE id = ?`).run(
+    pr.url,
+    pr.number,
+    id,
+  );
 }
 
 export function setRca(id: string, rca: RCA): void {
