@@ -204,3 +204,38 @@ flowchart TD
     classDef terminal fill:#fde,stroke:#c39;
     class SR terminal;
 ```
+
+## PR service (`src/git/`)
+
+`POST /api/incidents/:id/pr` ([pr.controller.ts](src/git/pr.controller.ts) →
+[pr.service.ts](src/git/pr.service.ts)) is **human-triggered, not an agent
+tool** — the dashboard's "Open PR" button calls it after a human reviews the
+RCA. Only callable once `rca` exists on the incident.
+
+Sequence, all against the local clone at `TARGET_REPO_PATH` (a separate
+`demo-app` repo, `TARGET_REPO` = `owner/repo`):
+
+1. `git fetch origin main` + `git checkout -B sre/incident-<id8> origin/main`
+   — always branches from a fresh copy of base; `-B` makes re-runs safe.
+2. Write `rca.proposed_patch` to a temp file, `git apply --check` (dry run)
+   then `git apply` for real. Failure at either step restores `main` and
+   throws `PatchApplyError` **before** any commit or push — "nothing
+   pushed" holds structurally, not by convention.
+3. `git commit` referencing the incident id, suspect commit, and confidence.
+4. `git push -u origin <branch> --force-with-lease`.
+5. Octokit `pulls.create({ base: main, head: branch, body: rca.postmortem_md
+   })` — the **only** GitHub API call in the whole flow; everything else is a
+   real `git` subprocess, matching the pattern in
+   [git-read.ts](src/agent/tools/git-read.ts).
+
+Status codes: `201` created (`{url, branch, number}`), `400` no RCA yet,
+`404` unknown incident, `409` patch failed to apply (git's own error
+surfaced in the body), `502` push/GitHub failure after a successful apply.
+
+### C3 patch contract
+
+[fixtures/example-patch.diff](fixtures/example-patch.diff) is one worked
+example of what `submit_rca`'s `proposed_patch` must look like for this
+service to accept it — a `git apply`-compatible unified diff. Guarded by
+[example-patch.test.ts](src/git/example-patch.test.ts), which fails loudly if
+the fixture ever drifts out of an applyable shape.
