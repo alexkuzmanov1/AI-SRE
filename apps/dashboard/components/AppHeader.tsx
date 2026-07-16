@@ -8,6 +8,9 @@ import { useIncidentClient } from "@/lib/client/provider";
 
 const HEALTH_POLL_MS = 10_000;
 
+/** Whether the app is running on fixture data instead of the real responder. */
+const IS_MOCK = (process.env.NEXT_PUBLIC_DATA_SOURCE ?? "mock") !== "api";
+
 type AgentHealth = "checking" | "online" | "offline";
 
 /** Live responder reachability, polled over the client seam. */
@@ -85,13 +88,23 @@ export function AppHeader() {
 
       <div className="flex-1" />
 
-      <div
-        className={`flex items-center gap-1.5 font-mono text-[11px] font-medium ${badge.text}`}
-        title="Live responder /health check, polled every 10s"
-      >
-        <StatusDot color={badge.color} size={7} pulse={health === "online"} />
-        <span className="hidden sm:inline">{badge.label}</span>
-      </div>
+      {IS_MOCK ? (
+        <div
+          className="flex items-center gap-1.5 font-mono text-[11px] font-medium text-warning"
+          title="NEXT_PUBLIC_DATA_SOURCE is not 'api' — showing fixture data; incidents and PRs are simulated"
+        >
+          <StatusDot color="var(--color-warning)" size={7} />
+          <span className="hidden sm:inline">mock data — no live agent</span>
+        </div>
+      ) : (
+        <div
+          className={`flex items-center gap-1.5 font-mono text-[11px] font-medium ${badge.text}`}
+          title="Live responder /health check, polled every 10s"
+        >
+          <StatusDot color={badge.color} size={7} pulse={health === "online"} />
+          <span className="hidden sm:inline">{badge.label}</span>
+        </div>
+      )}
     </header>
   );
 }

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useIncidentClient } from "@/lib/client/provider";
+import { ApiError } from "@/lib/client/http";
 import { useRefresh } from "@/lib/refresh";
 import { useToast } from "@/components/ui/ToastProvider";
 import { useIncidentStream } from "@/hooks/useIncidentStream";
@@ -36,6 +37,7 @@ export function InvestigationView({ id }: { id: string }) {
   const [incident, setIncident] = useState<Incident | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [applying, setApplying] = useState(false);
+  const [applyError, setApplyError] = useState<string | null>(null);
   const [reverting, setReverting] = useState(false);
 
   const { steps, isStreaming, rcaStep } = useIncidentStream(id);
@@ -44,6 +46,7 @@ export function InvestigationView({ id }: { id: string }) {
     let active = true;
     setIncident(null);
     setLoadError(null);
+    setApplyError(null);
     client
       .getIncident(id)
       .then((inc) => {
@@ -70,6 +73,7 @@ export function InvestigationView({ id }: { id: string }) {
       return;
     }
     setApplying(true);
+    setApplyError(null);
     const snapshot = incident;
     // Optimistic: flip status to resolved. The PR link itself is attached only
     // once the server returns it, so the card shows the pending state until then.
@@ -91,12 +95,26 @@ export function InvestigationView({ id }: { id: string }) {
           : prev,
       );
       refresh();
-      showToast(`Opened PR #${res.prNumber} — incident resolved.`, "success");
-    } catch {
+      const isMock = (process.env.NEXT_PUBLIC_DATA_SOURCE ?? "mock") !== "api";
+      showToast(
+        isMock
+          ? `Simulated PR #${res.prNumber} (mock data — no real PR was opened).`
+          : `Opened PR #${res.prNumber} — incident resolved.`,
+        "success",
+      );
+    } catch (err) {
       // Reconcile: reload the authoritative state (or restore the snapshot).
       const fresh = await client.getIncident(id).catch(() => null);
       setIncident(fresh ?? snapshot);
-      showToast("Couldn't open the PR. Please try again.", "error");
+      // Map the two contract failures to specific states; generic otherwise.
+      const message =
+        err instanceof ApiError && err.status === 409
+          ? "Patch failed to apply — the branch has diverged."
+          : err instanceof ApiError && err.status === 400
+            ? "No RCA yet — wait for the investigation to finish."
+            : "Couldn't open the PR. Please try again.";
+      setApplyError(message);
+      showToast(message, "error");
     } finally {
       setApplying(false);
     }
@@ -162,6 +180,7 @@ export function InvestigationView({ id }: { id: string }) {
             postmortemHref={`/incidents/${id}/postmortem`}
             onApplyFix={onApplyFix}
             applying={applying}
+            applyError={applyError}
             prUrl={hasOpenPr ? prUrl : undefined}
             prNumber={hasOpenPr ? prNumber : undefined}
           />

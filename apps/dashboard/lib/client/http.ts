@@ -32,6 +32,23 @@ import {
  *   POST /api/incidents/:id/apply-fix
  *   POST /api/incidents/:id/revert
  */
+/**
+ * HTTP failure carrying the status code and response body, so callers can map
+ * specific contract failures (e.g. apply-fix 409/400) to specific UI states.
+ */
+export class ApiError extends Error {
+  readonly status: number;
+  /** Raw response body text (often JSON like `{"error": "..."}`). */
+  readonly body: string;
+
+  constructor(status: number, statusText: string, path: string, body: string) {
+    super(`Request failed: ${status} ${statusText} (${path})`);
+    this.name = "ApiError";
+    this.status = status;
+    this.body = body;
+  }
+}
+
 export class HttpIncidentClient implements IncidentClient {
   private readonly baseUrl: string;
 
@@ -50,7 +67,8 @@ export class HttpIncidentClient implements IncidentClient {
       headers: { Accept: "application/json", ...init?.headers },
     });
     if (!res.ok) {
-      throw new Error(`Request failed: ${res.status} ${res.statusText} (${path})`);
+      const body = await res.text().catch(() => "");
+      throw new ApiError(res.status, res.statusText, path, body);
     }
     return (await res.json()) as T;
   }
@@ -170,9 +188,13 @@ export class HttpIncidentClient implements IncidentClient {
   }
 
   async applyFix(id: string): Promise<ApplyFixResult> {
-    return this.json<ApplyFixResult>(`/api/incidents/${encodeURIComponent(id)}/apply-fix`, {
-      method: "POST",
-    });
+    // Backend contract: POST /api/incidents/:id/pr → 200/201 { url, number, branch };
+    // 400 = no RCA yet, 409 = patch failed to apply / dirty repo (see pr.controller).
+    const res = await this.json<{ url: string; number: number }>(
+      `/api/incidents/${encodeURIComponent(id)}/pr`,
+      { method: "POST" },
+    );
+    return { prUrl: res.url, prNumber: res.number };
   }
 
   async revert(id: string): Promise<void> {

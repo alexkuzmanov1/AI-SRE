@@ -98,11 +98,21 @@ async function applyAndPush(
     const patchFile = join(dir, 'patch.diff');
     await writeFile(patchFile, ensureTrailingNewline(rca.proposed_patch));
     try {
-      await git(['apply', '--check', patchFile], repoPath);
       // --index stages the patched files directly, the same set `apply
       // --check` just validated — no `add -A`, so a stray untracked file
       // already sitting in the tree never rides along in the AI's commit.
-      await git(['apply', '--index', patchFile], repoPath);
+      //
+      // Model-generated diffs frequently carry miscounted @@ hunk headers or
+      // blank context lines missing their leading space ("corrupt patch").
+      // Try the strict form first; fall back to --recount, which re-derives
+      // the counts from the hunk body instead of trusting the header.
+      try {
+        await git(['apply', '--check', patchFile], repoPath);
+        await git(['apply', '--index', patchFile], repoPath);
+      } catch {
+        await git(['apply', '--check', '--recount', patchFile], repoPath);
+        await git(['apply', '--index', '--recount', patchFile], repoPath);
+      }
     } catch (e) {
       throw new PatchApplyError((e as Error).message);
     }

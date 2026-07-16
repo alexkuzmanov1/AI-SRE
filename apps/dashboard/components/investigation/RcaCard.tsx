@@ -24,6 +24,7 @@ export function RcaCard({
   postmortemHref,
   onApplyFix,
   applying,
+  applyError,
   prUrl,
   prNumber,
 }: {
@@ -31,6 +32,8 @@ export function RcaCard({
   postmortemHref: string;
   onApplyFix: () => void;
   applying: boolean;
+  /** Failure state of the last apply-fix attempt, shown inline by the button. */
+  applyError?: string | null;
   prUrl?: string;
   prNumber?: number;
 }) {
@@ -122,9 +125,18 @@ export function RcaCard({
           onClick={onApplyFix}
           className="w-full rounded-lg bg-success px-4 py-2.5 text-[13px] font-semibold text-bg transition-colors hover:bg-success-hover"
         >
-          Open PR with fix
+          {applyError ? "Retry opening PR" : "Open PR with fix"}
         </button>
       )}
+
+      {applyError && !applying ? (
+        <p
+          role="alert"
+          className="m-0 rounded-md border border-danger/30 bg-danger/[0.08] px-3 py-2 text-[11.5px] leading-snug text-danger"
+        >
+          {applyError}
+        </p>
+      ) : null}
 
       <Link
         href={postmortemHref}
