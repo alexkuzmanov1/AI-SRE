@@ -55,6 +55,18 @@ export class HttpIncidentClient implements IncidentClient {
     return (await res.json()) as T;
   }
 
+  async health(): Promise<boolean> {
+    try {
+      const res = await fetch(this.url("/health"), {
+        cache: "no-store",
+        signal: AbortSignal.timeout(3000),
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  }
+
   async listIncidents(filter: IncidentFilter = "all"): Promise<IncidentSummary[]> {
     const query = filter === "all" ? "" : `?filter=${encodeURIComponent(filter)}`;
     const wire = await this.json<WireIncident[]>(`/api/incidents${query}`);

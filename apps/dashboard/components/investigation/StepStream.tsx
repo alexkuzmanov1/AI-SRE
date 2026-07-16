@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { AgentStep } from "@/lib/types";
 import { RichText } from "@/components/ui/RichText";
 import { StatusDot } from "@/components/ui/StatusDot";
@@ -17,10 +17,63 @@ interface ThoughtRow {
 }
 type Row = ToolRow | ThoughtRow;
 
+/** One-line preview of a tool argument — long strings and objects are elided. */
+function previewValue(v: unknown, max = 48): string {
+  const raw =
+    typeof v === "string" ? v : typeof v === "object" && v !== null ? JSON.stringify(v) : String(v);
+  const flat = raw.replace(/\s+/g, " ").trim();
+  return flat.length > max ? `${flat.slice(0, max)}…` : flat;
+}
+
 /** Format `get_logs` + `{ service, window }` as `get_logs(checkout-api, 30m)`. */
 function formatToolCall(step: AgentStep): string {
-  const args = step.toolInput ? Object.values(step.toolInput).map((v) => String(v)) : [];
-  return `${step.toolName ?? "tool"}(${args.join(", ")})`;
+  const args = step.toolInput ? Object.values(step.toolInput).map((v) => previewValue(v)) : [];
+  let joined = args.join(", ");
+  if (joined.length > 120) joined = `${joined.slice(0, 120)}…`;
+  return `${step.toolName ?? "tool"}(${joined})`;
+}
+
+/** Above this length a tool result renders clamped, with a toggle to expand. */
+const RESULT_CLAMP_CHARS = 600;
+
+/** One-line JSON blobs read terribly — pretty-print them when they parse. */
+function prettify(text: string): string {
+  const t = text.trim();
+  if (!(t.startsWith("{") || t.startsWith("["))) return text;
+  try {
+    return JSON.stringify(JSON.parse(t), null, 2);
+  } catch {
+    return text;
+  }
+}
+
+/** Tool output: preserves line breaks, clamps very long results behind a toggle. */
+function ToolResultBlock({ text: raw }: { text: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const text = prettify(raw);
+  const long = text.length > RESULT_CLAMP_CHARS;
+  const shown = long && !expanded ? `${text.slice(0, RESULT_CLAMP_CHARS)}…` : text;
+
+  return (
+    <div className="flex flex-col items-start gap-1.5">
+      <span
+        className={`whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-muted ${
+          expanded ? "max-h-80 w-full overflow-y-auto" : ""
+        }`}
+      >
+        {shown}
+      </span>
+      {long ? (
+        <button
+          type="button"
+          onClick={() => setExpanded((e) => !e)}
+          className="bg-transparent p-0 font-mono text-[10.5px] font-semibold text-accent hover:underline"
+        >
+          {expanded ? "Show less" : `Show full output (${(text.length / 1000).toFixed(1)}k chars)`}
+        </button>
+      ) : null}
+    </div>
+  );
 }
 
 /** Fold the flat step list into display rows, pairing tool_call → tool_result. */
@@ -97,11 +150,7 @@ export function StepStream({
                 <span className="font-mono text-[11.5px] font-semibold text-accent">
                   {formatToolCall(row.call)}
                 </span>
-                {row.result?.toolResult ? (
-                  <span className="font-mono text-[11px] leading-relaxed text-muted">
-                    {row.result.toolResult}
-                  </span>
-                ) : null}
+                {row.result?.toolResult ? <ToolResultBlock text={row.result.toolResult} /> : null}
               </div>
             </div>
           );

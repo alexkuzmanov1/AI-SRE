@@ -25,6 +25,9 @@ export interface ApplyFixResult {
  * exact same call site works for a mock timer loop and for a real `EventSource`.
  */
 export interface IncidentClient {
+  /** Whether the responder backend is reachable. Never rejects. */
+  health(): Promise<boolean>;
+
   /** List incidents, optionally filtered. Defaults to `all`. */
   listIncidents(filter?: IncidentFilter): Promise<IncidentSummary[]>;
 

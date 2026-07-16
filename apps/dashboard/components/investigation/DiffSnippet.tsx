@@ -29,6 +29,18 @@ function splitContext(line: string): { code: string; comment?: string } {
  * success/danger tokens. Used by the RCA card (proposed fix) and the postmortem
  * ROOT CAUSE section (offending change).
  */
+/**
+ * Model-produced patches sometimes arrive with literal `\n` (and `\t`) escape
+ * sequences instead of real newlines — that would render the whole diff as one
+ * unreadable line. Unescape only when the string has no real newlines.
+ */
+function normalizeDiff(diff: string): string {
+  if (!diff.includes("\n") && diff.includes("\\n")) {
+    return diff.replace(/\\n/g, "\n").replace(/\\t/g, "\t");
+  }
+  return diff;
+}
+
 export function DiffSnippet({
   diff,
   background = "bg",
@@ -40,7 +52,7 @@ export function DiffSnippet({
   className?: string;
   textClassName?: string;
 }) {
-  const lines = diff.replace(/\n$/, "").split("\n");
+  const lines = normalizeDiff(diff).replace(/\n$/, "").split("\n");
   const bgClass = background === "panel" ? "bg-panel" : "bg-bg";
   return (
     <pre

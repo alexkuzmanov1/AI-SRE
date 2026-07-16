@@ -2,7 +2,41 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
 import { StatusDot } from "@/components/ui/StatusDot";
+import { useIncidentClient } from "@/lib/client/provider";
+
+const HEALTH_POLL_MS = 10_000;
+
+type AgentHealth = "checking" | "online" | "offline";
+
+/** Live responder reachability, polled over the client seam. */
+function useAgentHealth(): AgentHealth {
+  const client = useIncidentClient();
+  const [health, setHealth] = useState<AgentHealth>("checking");
+
+  useEffect(() => {
+    let active = true;
+    const check = async () => {
+      const ok = await client.health();
+      if (active) setHealth(ok ? "online" : "offline");
+    };
+    void check();
+    const timer = setInterval(check, HEALTH_POLL_MS);
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, [client]);
+
+  return health;
+}
+
+const HEALTH_BADGE: Record<AgentHealth, { color: string; label: string; text: string }> = {
+  checking: { color: "var(--color-muted)", label: "checking…", text: "text-muted" },
+  online: { color: "var(--color-success)", label: "agent online", text: "text-success" },
+  offline: { color: "var(--color-danger)", label: "agent offline", text: "text-danger" },
+};
 
 /** Pull the incident id out of the current path, defaulting to the demo incident. */
 function currentIncidentId(pathname: string): string {
@@ -18,6 +52,8 @@ const TAB_IDLE = "text-muted bg-transparent border-transparent hover:text-text";
 
 export function AppHeader() {
   const pathname = usePathname();
+  const health = useAgentHealth();
+  const badge = HEALTH_BADGE[health];
   const id = currentIncidentId(pathname);
   const isPostmortem = pathname.endsWith("/postmortem");
   const isDashboard = !isPostmortem;
@@ -49,9 +85,12 @@ export function AppHeader() {
 
       <div className="flex-1" />
 
-      <div className="flex items-center gap-1.5 font-mono text-[11px] font-medium text-success">
-        <StatusDot color="var(--color-success)" size={7} pulse />
-        <span className="hidden sm:inline">agent online</span>
+      <div
+        className={`flex items-center gap-1.5 font-mono text-[11px] font-medium ${badge.text}`}
+        title="Live responder /health check, polled every 10s"
+      >
+        <StatusDot color={badge.color} size={7} pulse={health === "online"} />
+        <span className="hidden sm:inline">{badge.label}</span>
       </div>
     </header>
   );
