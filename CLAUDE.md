@@ -12,16 +12,19 @@ The agent **proposes, never merges** — a human reviews the RCA and approves th
 
 ```
 apps/
-  demo-app/     # NestJS "patient" app with intentionally plantable bugs
   responder/    # Node/TS backend: webhook ingest, orchestrator, agent loop, tools
   dashboard/    # Next.js UI: incident feed, live investigation stream, RCA report
 packages/
   shared/       # Shared TypeScript types (ErrorEvent, Incident, RCA schema)
 ```
 
+The monitored "patient" app (NestJS, intentionally plantable bugs) lives in a **separate repo**
+(`alexkuzmanov1/ai-sre-demo-app`), cloned by `responder` at runtime via `TARGET_REPO` /
+`TARGET_REPO_PATH`. Not part of this monorepo.
+
 ## How it works (one incident, end to end)
 
-1. A bad commit ships → an endpoint in `demo-app` throws. A NestJS global exception filter catches it and POSTs an **error event** (message, stack, route, timestamp) to `responder`'s webhook (`POST /api/incidents`).
+1. A bad commit ships → an endpoint in the monitored app throws. Its error handler POSTs an **error event** (message, stack, route, timestamp) to `responder`'s webhook (`POST /api/incidents`).
 2. `responder` **fingerprints** the error (hash of normalized top stack frames) and dedupes — repeated errors attach to the existing incident.
 3. The **orchestrator** creates an incident row (status `investigating`) and spawns the **agent loop**.
 4. The agent (Claude with tool use) investigates iteratively — typical trajectory: `get_logs` → `get_deploy_history` → `get_recent_commits` → `get_diff` → `read_file`. Max **12 steps**.
@@ -32,7 +35,7 @@ packages/
 
 ## Tech stack
 
-- **demo-app:** NestJS (TypeScript)
+- **monitored app (separate repo):** NestJS (TypeScript)
 - **responder:** Node.js + TypeScript, Anthropic SDK (`claude-sonnet-4-6` by default), Octokit for GitHub
 - **dashboard:** Next.js (App Router), SSE for live streaming
 - **storage:** SQLite (`better-sqlite3`) — `incidents`, `agent_steps` tables in a local `data.db` file; no DB server
@@ -64,9 +67,12 @@ only once an `rca` exists on the incident.
 
 ```bash
 pnpm install
-pnpm dev                    # runs all three apps concurrently
-pnpm demo:break             # merges a scripted bad commit into demo-app to trigger an incident
+pnpm --filter responder dev    # boots responder on PORT (default 3001)
+pnpm --filter dashboard dev    # boots dashboard on :3002 (mock data by default)
 ```
+
+`pnpm demo:break` (merging a scripted bad commit to trigger an incident) is scripted in the
+separate monitored-app repo, not here.
 
 ## Environment variables (`.env` in apps/responder)
 
@@ -74,7 +80,7 @@ pnpm demo:break             # merges a scripted bad commit into demo-app to trig
 ANTHROPIC_API_KEY=...
 ANTHROPIC_MODEL=claude-sonnet-4-6
 GITHUB_TOKEN=...            # repo scope, PR creation
-TARGET_REPO=owner/demo-app
+TARGET_REPO=owner/ai-sre-demo-app
 TARGET_REPO_PATH=../demo-app
 DATABASE_URL=./data.db      # SQLite file path
 PORT=3001
@@ -89,4 +95,4 @@ PORT=3001
 
 ## Out of scope (hackathon)
 
-Multi-repo support, auth/teams, real log-store integrations, auto-merge, retries/queues. One repo, one demo app, one great live demo.
+Auth/teams, real log-store integrations, auto-merge, retries/queues. One monitored app, one great live demo.
