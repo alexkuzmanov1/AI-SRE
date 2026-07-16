@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { buildApp } from '../app.js';
-import { createIncident } from '../storage/incidents.repo.js';
+import { createIncident, setPr } from '../storage/incidents.repo.js';
 
 function makeIncident(): string {
   const id = randomUUID();
@@ -35,5 +35,17 @@ test('POST /api/incidents/:id/pr -> 400 when incident has no RCA yet', async () 
   const res = await app.inject({ method: 'POST', url: `/api/incidents/${id}/pr` });
   assert.equal(res.statusCode, 400);
   assert.match(res.json().error, /no RCA/);
+  await app.close();
+});
+
+test('POST /api/incidents/:id/pr -> 200 with the stored PR when one already exists, no git/GitHub work', async () => {
+  const app = buildApp();
+  const id = makeIncident();
+  setPr(id, { url: 'https://github.com/you/demo-app/pull/3', number: 3 });
+
+  const res = await app.inject({ method: 'POST', url: `/api/incidents/${id}/pr` });
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.json().url, 'https://github.com/you/demo-app/pull/3');
+  assert.equal(res.json().number, 3);
   await app.close();
 });

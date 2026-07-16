@@ -14,6 +14,9 @@ export type Incident = {
   firstSeen: string;
   count: number;
   rca?: RCA;
+  /** Set once `POST /api/incidents/:id/pr` has opened a PR for this incident. */
+  prUrl?: string;
+  prNumber?: number;
 };
 
 export type AgentStep = {

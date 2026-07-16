@@ -5,7 +5,13 @@ import { promisify } from 'node:util';
 import { mkdtemp, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { openPullRequest, NoRcaError, PatchApplyError, type OpenPrDeps } from './pr.service.js';
+import {
+  openPullRequest,
+  NoRcaError,
+  PatchApplyError,
+  DirtyRepoError,
+  type OpenPrDeps,
+} from './pr.service.js';
 import type { Incident } from '@sre/shared';
 
 const run = promisify(execFile);
@@ -27,9 +33,9 @@ async function makeRepoPair(): Promise<{ origin: string; work: string }> {
   return { origin, work };
 }
 
-function incidentWith(patch: string | undefined): Incident {
+function incidentWith(patch: string | undefined, id = 'abcd1234-0000'): Incident {
   return {
-    id: 'abcd1234-0000',
+    id,
     fingerprint: 'fp',
     status: 'resolved',
     title: 'Null deref in /pay',
@@ -109,4 +115,94 @@ test('no RCA -> NoRcaError, before any git runs', async () => {
     openPullRequest(incidentWith(undefined), { repoPath: '/nonexistent' }),
     NoRcaError,
   );
+});
+
+test('success path leaves the clone back on base, not the sre/incident-* branch', async () => {
+  const { work } = await makeRepoPair();
+  const patch =
+    'diff --git a/fix.txt b/fix.txt\nnew file mode 100644\nindex 0000000..e69de29\n' +
+    '--- /dev/null\n+++ b/fix.txt\n@@ -0,0 +1 @@\n+fixed\n';
+  await openPullRequest(incidentWith(patch), {
+    repoPath: work,
+    octokit: fakeOctokit([]),
+    targetRepo: 'you/demo-app',
+  });
+
+  const { stdout } = await run('git', ['-C', work, 'branch', '--show-current']);
+  assert.equal(stdout.trim(), 'main');
+});
+
+test('dirty working tree -> DirtyRepoError, nothing touched', async () => {
+  const { work } = await makeRepoPair();
+  await writeFile(join(work, 'stray.txt'), 'oops\n'); // untracked, pre-existing dirt
+
+  const patch =
+    'diff --git a/fix.txt b/fix.txt\nnew file mode 100644\nindex 0000000..e69de29\n' +
+    '--- /dev/null\n+++ b/fix.txt\n@@ -0,0 +1 @@\n+fixed\n';
+  const calls: unknown[] = [];
+  await assert.rejects(
+    openPullRequest(incidentWith(patch), {
+      repoPath: work,
+      octokit: fakeOctokit(calls),
+      targetRepo: 'you/demo-app',
+    }),
+    DirtyRepoError,
+  );
+  assert.equal(calls.length, 0);
+
+  const { stdout } = await run('git', ['-C', work, 'branch', '--show-current']);
+  assert.equal(stdout.trim(), 'main'); // never left base
+});
+
+test('duplicate PR (GitHub 422) -> returns the existing PR instead of failing', async () => {
+  const { work } = await makeRepoPair();
+  const patch =
+    'diff --git a/fix.txt b/fix.txt\nnew file mode 100644\nindex 0000000..e69de29\n' +
+    '--- /dev/null\n+++ b/fix.txt\n@@ -0,0 +1 @@\n+fixed\n';
+
+  const octokit = {
+    rest: {
+      pulls: {
+        create: async () => {
+          const err = new Error('Validation Failed') as Error & { status: number };
+          err.status = 422;
+          throw err;
+        },
+        list: async () => ({
+          data: [{ html_url: 'https://github.com/you/demo-app/pull/9', number: 9 }],
+        }),
+      },
+    },
+  } as unknown as NonNullable<OpenPrDeps['octokit']>;
+
+  const res = await openPullRequest(incidentWith(patch), {
+    repoPath: work,
+    octokit,
+    targetRepo: 'you/demo-app',
+  });
+  assert.deepEqual(res, { url: 'https://github.com/you/demo-app/pull/9', branch: res.branch, number: 9 });
+});
+
+test('two concurrent PR requests on the same clone serialize instead of corrupting it', async () => {
+  const { work } = await makeRepoPair();
+  const patchFor = (name: string) =>
+    `diff --git a/${name} b/${name}\nnew file mode 100644\nindex 0000000..e69de29\n` +
+    `--- /dev/null\n+++ b/${name}\n@@ -0,0 +1 @@\n+fixed\n`;
+
+  const [resA, resB] = await Promise.all([
+    openPullRequest(incidentWith(patchFor('a.txt'), 'aaaa1111-0000'), {
+      repoPath: work,
+      octokit: fakeOctokit([]),
+      targetRepo: 'you/demo-app',
+    }),
+    openPullRequest(incidentWith(patchFor('b.txt'), 'bbbb2222-0000'), {
+      repoPath: work,
+      octokit: fakeOctokit([]),
+      targetRepo: 'you/demo-app',
+    }),
+  ]);
+
+  assert.notEqual(resA.branch, resB.branch);
+  const { stdout } = await run('git', ['-C', work, 'branch', '--show-current']);
+  assert.equal(stdout.trim(), 'main'); // both finished and restored base, no leftover interleave
 });

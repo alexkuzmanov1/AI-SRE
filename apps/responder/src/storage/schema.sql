@@ -6,7 +6,9 @@ CREATE TABLE IF NOT EXISTS incidents (
   first_seen       TEXT NOT NULL,
   count            INTEGER NOT NULL DEFAULT 1,
   rca_json         TEXT,
-  error_event_json TEXT
+  error_event_json TEXT,
+  pr_url           TEXT,
+  pr_number        INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS agent_steps (
