@@ -1,0 +1,28 @@
+# Render blueprint: deploys the responder as a Docker web service.
+# Render dashboard -> New -> Blueprint -> select this repo.
+services:
+  - type: web
+    name: ai-sre-responder
+    runtime: docker
+    dockerfilePath: apps/responder/Dockerfile
+    dockerContext: .
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      # Render injects PORT; the responder reads it via env.PORT().
+      # Free plan has an EPHEMERAL filesystem: the SQLite DB and the demo-app
+      # clone reset on every deploy/restart. Fine for a demo; attach a paid
+      # disk mounted at /data and point these at it for persistence.
+      - key: DATABASE_URL
+        value: /tmp/data.db
+      - key: TARGET_REPO_PATH
+        value: /tmp/demo-app
+      - key: TARGET_REPO
+        value: alexkuzmanov1/ai-sre-demo-app
+      - key: ANTHROPIC_MODEL
+        value: claude-sonnet-4-6
+      # Secrets: set these in the Render dashboard when prompted.
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: GITHUB_TOKEN
+        sync: false

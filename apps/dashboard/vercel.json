@@ -1,0 +1,3 @@
+{
+  "buildCommand": "pnpm --filter @sre/shared build && next build"
+}
