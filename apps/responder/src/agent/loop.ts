@@ -1,4 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import type { AgentStep, RCA } from '@sre/shared';
 import { env } from '../config/env.js';
 import { toolSchemas, runTool, TERMINAL_TOOL } from './tools/index.js';
@@ -54,6 +56,26 @@ export function startInvestigation(incidentId: string): void {
   });
 }
 
+const execFileAsync = promisify(execFile);
+
+/**
+ * Hosted deploys clone TARGET_REPO once at boot; without a refresh, incidents
+ * caused by commits pushed after boot would be investigated against a stale
+ * tree. Opt-in via REFRESH_TARGET_REPO=true — never enabled for local dev,
+ * where TARGET_REPO_PATH is a developer's working clone that a `reset --hard`
+ * would destroy. Best-effort: a failed refresh must not block investigation.
+ */
+async function refreshTargetRepo(): Promise<void> {
+  if (process.env.REFRESH_TARGET_REPO !== 'true') return;
+  const repoPath = env.TARGET_REPO_PATH();
+  try {
+    await execFileAsync('git', ['fetch', 'origin', 'main'], { cwd: repoPath });
+    await execFileAsync('git', ['reset', '--hard', 'origin/main'], { cwd: repoPath });
+  } catch (err) {
+    console.error('[loop] target repo refresh failed (continuing with existing clone)', err);
+  }
+}
+
 function record(step: Omit<AgentStep, 'index'>): AgentStep {
   const index = appendStep(step as AgentStep); // DB assigns the monotonic idx
   const full: AgentStep = { ...step, index };
@@ -70,6 +92,8 @@ function giveUp(incidentId: string, reason: string): void {
 export async function runInvestigation(incidentId: string, opts: RunOptions = {}): Promise<void> {
   const incident = getIncident(incidentId);
   if (!incident) return;
+
+  await refreshTargetRepo();
 
   const client: MessagesClient = opts.client ?? new Anthropic({ apiKey: env.ANTHROPIC_API_KEY() });
   const model = env.ANTHROPIC_MODEL();

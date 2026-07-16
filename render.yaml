@@ -21,6 +21,10 @@ services:
         value: alexkuzmanov1/ai-sre-demo-app
       - key: ANTHROPIC_MODEL
         value: claude-sonnet-4-6
+      # Refresh the clone before each investigation, so incidents caused by
+      # commits pushed after boot are investigated against the current main.
+      - key: REFRESH_TARGET_REPO
+        value: "true"
       # Secrets: set these in the Render dashboard when prompted.
       - key: ANTHROPIC_API_KEY
         sync: false
