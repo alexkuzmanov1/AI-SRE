@@ -52,6 +52,10 @@ export class MockIncidentClient implements IncidentClient {
     return this.incidents.find((inc) => inc.id === id);
   }
 
+  async health(): Promise<boolean> {
+    return true; // the mock backend is always "up"
+  }
+
   async listIncidents(filter: IncidentFilter = "all"): Promise<IncidentSummary[]> {
     await delay(180);
     return this.incidents.filter((inc) => matchesFilter(inc, filter)).map(toSummary);

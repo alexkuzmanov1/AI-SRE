@@ -191,6 +191,9 @@ export function PostmortemView({ id }: { id: string }) {
           </Section>
 
           <Section title="Timeline (UTC)">
+            {rca.timeline.length === 0 ? (
+              <p className="m-0 text-[12.5px] text-muted">No timeline recorded.</p>
+            ) : null}
             <div className="grid grid-cols-[64px_1fr] gap-x-4 gap-y-2 text-[12.5px] leading-normal text-text-secondary">
               {rca.timeline.map((entry, i) => (
                 <div key={i} className="contents">
@@ -242,9 +245,28 @@ export function PostmortemView({ id }: { id: string }) {
             </div>
           </Section>
 
+          <Section title="Proposed Fix">
+            <DiffSnippet
+              diff={rca.proposedPatch}
+              background="panel"
+              textClassName="text-[11.5px] leading-[1.7]"
+            />
+          </Section>
+
           <Section title="Fix">
             <div className="flex items-center gap-3 rounded-lg border border-border-subtle bg-panel px-4 py-3">
-              <span className="font-mono text-xs font-semibold text-success">PR #{prNumber}</span>
+              {prUrl ? (
+                <a
+                  href={prUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="font-mono text-xs font-semibold text-success no-underline hover:underline"
+                >
+                  PR #{prNumber} ↗
+                </a>
+              ) : (
+                <span className="font-mono text-xs font-semibold text-muted">no PR yet</span>
+              )}
               <span className="flex-1 text-[12.5px] text-text-secondary">{rca.fixDescription}</span>
               {rca.prMerged ? (
                 <span className="rounded-full bg-purple/[0.13] px-2 py-0.5 font-mono text-[10px] font-medium text-purple">
@@ -255,6 +277,9 @@ export function PostmortemView({ id }: { id: string }) {
           </Section>
 
           <Section title="Action Items">
+            {rca.actionItems.length === 0 ? (
+              <p className="m-0 text-[12.5px] text-muted">No action items recorded.</p>
+            ) : null}
             <div className="flex flex-col gap-2">
               {rca.actionItems.map((item, i) => (
                 <div

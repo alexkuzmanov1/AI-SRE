@@ -5,6 +5,7 @@
   "type": "module",
   "dependencies": {
     "@anthropic-ai/sdk": "^0.111.0",
+    "@fastify/cors": "^11.3.0",
     "@sre/shared": "workspace:*",
     "better-sqlite3": "^11.8.0",
     "dotenv": "^16.4.7",

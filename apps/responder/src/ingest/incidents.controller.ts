@@ -2,7 +2,13 @@ import type { FastifyInstance } from 'fastify';
 import { randomUUID } from 'node:crypto';
 import type { ErrorEvent } from '@sre/shared';
 import { fingerprint } from './fingerprint.js';
-import { createIncident, findByFingerprint, bumpCount } from '../storage/incidents.repo.js';
+import {
+  createIncident,
+  findByFingerprint,
+  bumpCount,
+  getIncident,
+  listIncidents,
+} from '../storage/incidents.repo.js';
 import { startInvestigation } from '../agent/loop.js';
 
 function validateErrorEvent(body: unknown): ErrorEvent | null {
@@ -22,6 +28,30 @@ function validateErrorEvent(body: unknown): ErrorEvent | null {
 }
 
 export async function incidentsRoutes(app: FastifyInstance): Promise<void> {
+  // Filter semantics mirror the dashboard's IncidentFilter: "open" is anything
+  // not yet resolved; unknown/absent filters fall back to "all".
+  app.get('/api/incidents', async (request) => {
+    const { filter } = request.query as { filter?: string };
+    const incidents = listIncidents();
+    switch (filter) {
+      case 'open':
+        return incidents.filter((i) => i.status !== 'resolved');
+      case 'resolved':
+        return incidents.filter((i) => i.status === 'resolved');
+      default:
+        return incidents;
+    }
+  });
+
+  app.get('/api/incidents/:id', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const incident = getIncident(id);
+    if (!incident) {
+      return reply.code(404).send({ error: 'incident not found' });
+    }
+    return incident;
+  });
+
   app.post('/api/incidents', async (request, reply) => {
     const event = validateErrorEvent(request.body);
     if (!event) {

@@ -15,6 +15,11 @@ export async function streamRoutes(app: FastifyInstance): Promise<void> {
     // send its own reply on top of what we write to reply.raw below.
     reply.hijack();
 
+    // Hijacking discards headers set on `reply` by hooks — carry them over,
+    // or the browser's EventSource dies on a missing CORS allow-origin.
+    for (const [name, value] of Object.entries(reply.getHeaders())) {
+      if (value !== undefined) reply.raw.setHeader(name, value);
+    }
     reply.raw.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
