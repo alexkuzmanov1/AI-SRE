@@ -55,6 +55,19 @@ To point the dashboard at the real responder instead of mock fixtures, set `NEXT
 - **responder**: `render.yaml` deploys it as a Docker web service on Render (free plan — filesystem is ephemeral, so the SQLite DB and the cloned target repo reset on every deploy). Health check: `/health`.
 - **dashboard**: deploys separately (`apps/dashboard/vercel.json`), pointed at the responder's public URL via `NEXT_PUBLIC_RESPONDER_URL`.
 
+## Roadmap
+
+Built in 48h for a hackathon. Next steps we'd take — each one slots into a seam already in the code (tool registry, `ErrorEvent` contract, or repo layer), not a rewrite:
+
+- **Similar-incident recall** — `find_similar_incidents` tool: embed resolved RCAs, cosine similarity over the existing SQLite rows, agent opens with "this resembles INC-14."
+- **Real log integrations** — swap the mocked `get_logs` JSON fixture for Loki / Kibana / New Relic adapters behind the same tool schema.
+- **Real alert sources** — ingest from Sentry / PagerDuty / CloudWatch webhooks, not just the demo app's own error handler, normalized into the existing `ErrorEvent` contract.
+- **Slack notifications** — post incident opened / RCA ready / PR link to a channel; approve the PR from Slack.
+- **Multi-repo support** — one responder monitoring several target repos, fingerprint namespaced per service.
+- **One-command demo ops** — root `pnpm dev` to boot both apps, `pnpm demo:reset` to clear SQLite and close demo PRs for repeatable runs.
+- **Post-fix verification** — after a PR merges, watch the error rate for that fingerprint and auto-resolve or reopen the incident.
+- **Persistent storage in hosted mode** — Render's free-tier filesystem is ephemeral; move SQLite to a mounted disk or add litestream backup so incidents survive deploys.
+
 ## Further reading
 
 - [apps/responder/README.md](apps/responder/README.md) — endpoints, agent tools, env vars, SSE contract
