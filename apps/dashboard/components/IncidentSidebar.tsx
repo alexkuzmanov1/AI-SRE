@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useIncidentClient } from "@/lib/client/provider";
 import { useRefresh } from "@/lib/refresh";
@@ -15,6 +15,16 @@ const FILTERS: { key: IncidentFilter; label: string }[] = [
   { key: "open", label: "Open" },
   { key: "resolved", label: "Resolved" },
 ];
+
+/** How often the list re-syncs so new incidents appear without a reload. */
+const LIST_POLL_MS = 5000;
+
+/** Mirrors the backend's filter semantics so one "all" fetch serves the tabs. */
+function applyFilter(rows: IncidentSummary[], filter: IncidentFilter): IncidentSummary[] {
+  if (filter === "open") return rows.filter((i) => i.status !== "resolved");
+  if (filter === "resolved") return rows.filter((i) => i.status === "resolved");
+  return rows;
+}
 
 function IncidentRow({
   incident,
@@ -119,44 +129,48 @@ export function IncidentSidebar({
   const [error, setError] = useState<string | null>(null);
   const [counts, setCounts] = useState({ open: 0, resolved: 0 });
 
-  // Filtered list drives the visible rows (tabs -> listIncidents(filter)).
+  // One fetch feeds rows + counts, then keeps polling silently so incidents
+  // created after page load appear without a manual refresh. The skeleton only
+  // shows on the initial load / a filter switch — background syncs never
+  // blank the list, and a transient poll failure keeps the last good data.
+  const lastFilter = useRef<IncidentFilter | null>(null);
   useEffect(() => {
     let active = true;
-    setError(null);
-    setList(null);
-    client
-      .listIncidents(filter)
-      .then((rows) => {
-        if (active) setList(rows);
-      })
-      .catch(() => {
-        if (active) {
-          setError("Couldn't load incidents");
-          setList([]);
-        }
-      });
-    return () => {
-      active = false;
-    };
-  }, [client, filter, version]);
+    let timer: ReturnType<typeof setTimeout> | undefined;
 
-  // Full list feeds the collapsed strip's counts.
-  useEffect(() => {
-    let active = true;
-    client
-      .listIncidents("all")
-      .then((all) => {
+    if (lastFilter.current !== filter) {
+      lastFilter.current = filter;
+      setList(null);
+      setError(null);
+    }
+
+    const load = async () => {
+      try {
+        const all = await client.listIncidents("all");
         if (!active) return;
         setCounts({
           open: all.filter((i) => i.status !== "resolved").length,
           resolved: all.filter((i) => i.status === "resolved").length,
         });
-      })
-      .catch(() => {});
+        setList(applyFilter(all, filter));
+        setError(null);
+      } catch {
+        if (!active) return;
+        // Show the error only when there's nothing usable on screen.
+        setList((prev) => {
+          if (prev === null) setError("Couldn't load incidents");
+          return prev ?? [];
+        });
+      }
+      timer = setTimeout(load, LIST_POLL_MS);
+    };
+
+    void load();
     return () => {
       active = false;
+      if (timer) clearTimeout(timer);
     };
-  }, [client, version]);
+  }, [client, filter, version]);
 
   if (collapsed) {
     return (
